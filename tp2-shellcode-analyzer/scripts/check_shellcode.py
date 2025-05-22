@@ -1,0 +1,5 @@
+from shellcode_analyzer.analyzer import main
+
+if __name__ == "__main__":
+    main()
+

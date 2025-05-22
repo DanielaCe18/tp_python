@@ -1,16 +1,22 @@
 [tool.poetry]
 name = "template-code"
 version = "0.1.0"
-description = ""
-authors = ["Thibaud ROBIN <trobin@esgi.com>"]
+description = "Projet TP1 - IDS/IPS maison ESGI"
+authors = ["Daniela Ceraku <dceraku1@myges.fr>"]
 readme = "README.md"
+packages = [
+    { include = "tp1", from = "src" }
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
 requests = "^2.32.3"
-scapy = "^2.6.0"
+scapy = "^2.6.1"
 pygal = "^3.0.5"
-fpdf2 = "^2.8.1"
+reportlab = "^4.4.1"
+matplotlib = "^3.10.3"
+
+[tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
 
 [build-system]
@@ -18,5 +24,4 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-tp1 = "src.tp1.main:main"
-tp3 = "src.tp3.main:main"
+tp1 = "tp1.main:main"

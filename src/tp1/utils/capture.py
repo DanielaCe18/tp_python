@@ -1,49 +1,114 @@
-from src.tp1.utils.lib import choose_interface
+from scapy.all import sniff, ARP, IP, TCP, UDP, Raw
+from collections import Counter, defaultdict
+import re
 
 
 class Capture:
-    def __init__(self) -> None:
-        self.interface = choose_interface()
-        self.summary = ""
+    def __init__(self, iface=None, packet_count=10000, timeout=60):
+        self.iface = iface
+        self.packet_count = packet_count
+        self.timeout = timeout
+        self.packets = []
+        self.protocol_counts = Counter()
+        self.port_counts = Counter()
+        self.ip_traffic = Counter()
+        self.attacks = []
 
-    def capture_trafic(self) -> None:
-        """
-        Capture network trafic from an interface
-        """
-        interface = self.interface
+    def capture_trafic(self):
+        self.packets = sniff(iface=self.iface, count=self.packet_count, timeout=self.timeout)
+        self._analyze_protocols()
+        self._detect_attacks()
 
-    def sort_network_protocols(self) -> None:
-        """
-        Sort and return all captured network protocols
-        """
+    def _analyze_protocols(self):
+        for pkt in self.packets:
+            proto = self._get_proto(pkt)
+            self.protocol_counts[proto] += 1
 
-    def get_all_protocols(self) -> None:
-        """
-        Return all protocols captured with total packets number
-        """
+            if pkt.haslayer(TCP) or pkt.haslayer(UDP):
+                sport = pkt.sport
+                dport = pkt.dport
+                self.port_counts[sport] += 1
+                self.port_counts[dport] += 1
 
-    def analyse(self, protocols: str) -> None:
-        """
-        Analyse all captured data and return statement
-        Si un tra c est illégitime (exemple : Injection SQL, ARP
-        Spoo ng, etc)
-        a Noter la tentative d'attaque.
-        b Relever le protocole ainsi que l'adresse réseau/physique
-        de l'attaquant.
-        c (FACULTATIF) Opérer le blocage de la machine
-        attaquante.
-        Sinon a cher que tout va bien
-        """
-        all_protocols = self.get_all_protocols()
-        sort = self.sort_network_protocols()
-        self.summary = self.gen_summary()
+            if pkt.haslayer(IP):
+                self.ip_traffic[pkt[IP].src] += 1
 
-    def get_summary(self) -> str:
-        return self.summary
+    def _get_proto(self, pkt):
+        if pkt.haslayer(ARP):
+            return "ARP"
+        elif pkt.haslayer(IP):
+            if pkt.haslayer(TCP):
+                dport = pkt[TCP].dport
+                if dport == 80:
+                    return "HTTP"
+                elif dport == 443:
+                    return "HTTPS"
+                elif dport == 21:
+                    return "FTP"
+                elif dport == 22:
+                    return "SSH"
+                elif dport == 3306:
+                    return "MySQL"
+                return "TCP"
+            elif pkt.haslayer(UDP):
+                dport = pkt[UDP].dport
+                if dport == 53:
+                    return "DNS"
+                return "UDP"
+            return f"IP({pkt[IP].proto})"
+        return "OTHER"
 
-    def gen_summary(self) -> str:
-        """
-        Generate summary
-        """
-        summary = ""
-        return summary
+    def _detect_attacks(self):
+        seen_arp = {}
+        ip_hits = defaultdict(int)
+
+        for pkt in self.packets:
+            # --- ARP Spoofing ---
+            if pkt.haslayer(ARP):
+                ip = pkt[ARP].psrc
+                mac = pkt[ARP].hwsrc
+                if ip in seen_arp and seen_arp[ip] != mac:
+                    self.attacks.append({
+                        "type": "ARP Spoofing",
+                        "ip": ip,
+                        "mac": mac,
+                        "description": f"Conflit ARP : {ip} a été vu avec plusieurs MAC (potentiel spoof)"
+                    })
+                else:
+                    seen_arp[ip] = mac
+
+            # --- SQL Injection ---
+            if pkt.haslayer(Raw):
+                payload = pkt[Raw].load.decode(errors="ignore").lower()
+                if re.search(r"(select\s.+\sfrom|union\s+select|drop\s+table|--|')", payload):
+                    self.attacks.append({
+                        "type": "SQL Injection",
+                        "ip": pkt[IP].src if pkt.haslayer(IP) else "unknown",
+                        "mac": pkt.src,
+                        "description": f"Payload suspect détecté : {payload[:50]}"
+                    })
+
+            # ---DoS Detection (même IP spammant) ---
+            if pkt.haslayer(IP):
+                ip_hits[pkt[IP].src] += 1
+
+        for ip, count in ip_hits.items():
+            if count > self.packet_count * 0.5:  # Plus de 50% des paquets viennent de cette IP
+                self.attacks.append({
+                    "type": "DoS suspect",
+                    "ip": ip,
+                    "description": f"IP {ip} a généré {count} paquets ({int(100 * count / self.packet_count)}%)"
+                })
+
+    def analyse(self, proto_filter=None):
+        if proto_filter:
+            self.packets = [p for p in self.packets if self._get_proto(p).lower() == proto_filter.lower()]
+
+    def get_summary(self):
+        return {
+            "protocols": dict(self.protocol_counts),
+            "top_ports": self.port_counts.most_common(5),
+            "top_ips": self.ip_traffic.most_common(5),
+            "attacks": self.attacks,
+            "packet_count": len(self.packets),
+        }

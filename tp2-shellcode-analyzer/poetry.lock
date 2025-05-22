@@ -1,0 +1,11 @@
+[tool.poetry]
+name = "tp2-shellcode-analyzer"
+version = "0.1.0"
+description = "Analyseur de shellcode avec pylibemu"
+authors = ["Daniela <cedaniela613@gmail.com>"]
+packages = [
+    { include = "shellcode_analyzer", from = "src" }
+]
+
+[tool.poetry.scripts]
+check-shellcode = "shellcode_analyzer.analyzer:main"
